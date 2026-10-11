@@ -1,5 +1,10 @@
+lightgbm==4.6.0
 numpy==2.0.2
+open_clip_torch==3.3.0
 pandas==2.3.3
 pillow==11.3.0
 pyarrow==21.0.0
 rawpy==0.27.1
+scikit-learn==1.6.1
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
