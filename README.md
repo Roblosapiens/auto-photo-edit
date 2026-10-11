@@ -21,6 +21,24 @@ Target: Lightroom Classic 7.0 (process version 2012 sliders), Windows.
 6. **Hybrid mode** - photographer edits 2-3 key shots per event; the model adjusts the rest relative
    to them.
 
+## Lightroom plugin
+
+**Install (once):** File > Plug-in Manager > Add > select `lightroom/AutoPhotoEdit.lrplugin`.
+The plugin calls `.venv/Scripts/python.exe src/predict.py` in this repo, using `models/autoedit.pkl`.
+
+**Use, per event:**
+1. Edit 1-3 representative photos by hand (no need to crop the others first).
+2. Give those key photos a **green label** (press `8`).
+3. Select all photos of the event in Grid view.
+4. Library > Plug-in Extras > **Auto Edit from Key Photos (green label)** > Apply.
+
+The other photos get the key photos' average settings (tone, presence, sharpening, noise
+reduction, vignette); exposure and white balance are adjusted per photo by the model. Key photos and
+crops are left alone; one Ctrl+Z undoes the whole batch.
+
+**Retrain** after a season of new edits: re-run `extract.py`, `previews.py`, `features.py`, then
+`python src/train_final.py <data_dir> models/autoedit.pkl`. `train.py` re-runs the evaluation.
+
 ## Data
 
 Nothing personal is committed: catalogs, photos, extracted datasets (`data/`) and models

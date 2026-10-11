@@ -18,8 +18,9 @@ from PIL import Image
 N_BINS = 16
 
 
-def image_stats(path):
-    im = Image.open(path).convert("RGB")
+def image_stats(src):
+    """src: a file path or a PIL image."""
+    im = (src if isinstance(src, Image.Image) else Image.open(src)).convert("RGB")
     im.thumbnail((256, 256))
     a = np.asarray(im, dtype=np.float32) / 255.0
     lum = 0.2126 * a[..., 0] + 0.7152 * a[..., 1] + 0.0722 * a[..., 2]
@@ -57,7 +58,8 @@ def exif_features(df):
     })
 
 
-def embed(paths, ids, data_dir):
+def clip_embed(images, verbose=False):
+    """CLIP ViT-B/32 embeddings (unit length) for a list of file paths or PIL images."""
     import open_clip
     import torch
 
@@ -66,12 +68,17 @@ def embed(paths, ids, data_dir):
     model = model.eval().to(dev)
     out = []
     with torch.no_grad():
-        for i in range(0, len(paths), 128):
-            batch = torch.stack([preprocess(Image.open(p).convert("RGB")) for p in paths[i:i + 128]]).to(dev)
-            e = model.encode_image(batch)
+        for i in range(0, len(images), 128):
+            batch = [im if isinstance(im, Image.Image) else Image.open(im) for im in images[i:i + 128]]
+            e = model.encode_image(torch.stack([preprocess(im.convert("RGB")) for im in batch]).to(dev))
             out.append((e / e.norm(dim=-1, keepdim=True)).float().cpu().numpy())
-            print(f"  embedded {min(i + 128, len(paths))}/{len(paths)}", flush=True)
-    np.save(os.path.join(data_dir, "emb.npy"), np.concatenate(out))
+            if verbose:
+                print(f"  embedded {min(i + 128, len(images))}/{len(images)}", flush=True)
+    return np.concatenate(out)
+
+
+def embed(paths, ids, data_dir):
+    np.save(os.path.join(data_dir, "emb.npy"), clip_embed(paths, verbose=True))
     np.save(os.path.join(data_dir, "emb_ids.npy"), np.asarray(ids))
 
 

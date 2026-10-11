@@ -20,6 +20,22 @@ from dng import read_dng
 MAX_SIDE = 1024
 
 
+def load_preview(path):
+    """Return (PIL image <= MAX_SIDE, wb_r, wb_b) for a DNG or other raw file, without writing anything."""
+    if path.lower().endswith(".dng"):
+        jpeg, neutral = read_dng(path)
+        if jpeg and neutral:
+            im = Image.open(io.BytesIO(jpeg))
+            im.thumbnail((MAX_SIDE, MAX_SIDE))
+            return im, neutral[1] / neutral[0], neutral[1] / neutral[2]
+    with rawpy.imread(path) as raw:
+        wb = raw.camera_whitebalance
+        thumb = raw.extract_thumb()
+    im = Image.open(io.BytesIO(thumb.data)) if thumb.format == rawpy.ThumbFormat.JPEG else Image.fromarray(thumb.data)
+    im.thumbnail((MAX_SIDE, MAX_SIDE))
+    return im, wb[0] / wb[1], wb[2] / wb[1]
+
+
 def process(row, prev_dir):
     image_id, path = row
     out = os.path.join(prev_dir, f"{image_id}.jpg")
