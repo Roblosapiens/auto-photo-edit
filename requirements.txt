@@ -1,3 +1,4 @@
+geocalib @ git+https://github.com/cvg/GeoCalib@97b8968e7798a66bf04fcf791fb535624241bda7
 lightgbm==4.6.0
 numpy==2.0.2
 open_clip_torch==3.3.0

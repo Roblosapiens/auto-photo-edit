@@ -165,7 +165,7 @@ local function run(context, withCrop)
 	f:close()
 
 	local progress = LrProgressScope { title = 'Auto Edit: analysing ' .. #photos .. ' photos', functionContext = context }
-	progress:setCaption(withCrop and 'Running the models (about 20-60 seconds)...' or 'Running the model (about 10-30 seconds)...')
+	progress:setCaption(withCrop and 'Running the models (about 1 second per photo)...' or 'Running the model (about 10-30 seconds)...')
 	-- On Windows LrTasks.execute needs the whole command wrapped in an extra pair of quotes
 	local cmd = '"' .. '"' .. PYTHON .. '" "' .. SCRIPT .. '" "' .. reqPath .. '" "' .. respPath .. '"'
 		.. (withCrop and '' or ' --no-crop') .. ' > "' .. logPath .. '" 2>&1' .. '"'
@@ -180,7 +180,7 @@ local function run(context, withCrop)
 	local settings, count, crops = parseResponse(respPath)
 	local info = string.format('%d key photo(s) -> %d photo(s) will be updated.', nKeys, count)
 	if withCrop then
-		info = info .. string.format('\n%d of them get a crop (not straightened).', crops)
+		info = info .. string.format('\n%d of them get a crop (straightened where the camera was tilted).', crops)
 		if nCropped > 0 then
 			info = info .. string.format('\n%d already-cropped photo(s) keep their crop.', nCropped)
 		end

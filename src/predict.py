@@ -1,6 +1,6 @@
 """Predict develop settings (and crops) for one event from its key photos. Called by the Lightroom plugin.
 
-Usage: python src/predict.py <request.json> <response.tsv> [--no-crop] [--models DIR]
+Usage: python src/predict.py <request.json> <response.tsv> [--no-crop] [--no-straighten] [--models DIR]
 
 request.json (written by the plugin):
   {"photos": [{"id": 123, "path": "J:/...dng", "key": true, "cropped": false, "iso": 6400,
@@ -27,10 +27,11 @@ import pandas as pd
 
 from crop_features import analyse, load_pose_model
 from crop_model import TARGETS as CROP_TARGETS
-from crop_model import SUBJECT_P, contain_subject, person_features, photo_features, targets_to_crop
+from crop_model import SUBJECT_P, contain_subject, person_features, photo_features, rotate_crop, targets_to_crop
 from features import clip_embed, exif_features, image_stats
 from model import HYBRID_TARGETS, SYNC_SLIDERS, add_derived, design
 from previews import load_preview
+from straighten import straighten_angles
 
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -98,7 +99,7 @@ def tone_settings(df, keys, emb, m):
     return out
 
 
-def crop_settings(df, images, emb, cm):
+def crop_settings(df, images, emb, cm, straighten=True):
     """Crops for non-key, not-yet-cropped, upright photos: {row index: {Crop*: value}}."""
     todo = df.index[~df.key & ~df.cropped & df.upright].tolist()
     if not todo:
@@ -123,19 +124,22 @@ def crop_settings(df, images, emb, cm):
     X = pd.DataFrame(rows).reindex(columns=cm["feat_cols"])
     M = np.hstack([X.to_numpy(float), cm["pca"].transform(emb[idx])])
     pred = pd.DataFrame({t: cm["models"][t].predict(M) for t in CROP_TARGETS})
-    pred["t_angle"] = 0.0  # straightening was not learnable (evaluation: no better than 0)
+    pred["t_angle"] = 0.0  # the crop model's own angle was no better than 0; GeoCalib straightens below
+    angles = straighten_angles([images[i] for i in idx], df.focal_length[idx].tolist()) if straighten else [0.0] * len(idx)
     out = {}
     for j, i in enumerate(idx):
         W, H = images[i].size
         c = targets_to_crop(pred.iloc[j], boxes[j], W, H)
         if rows[j]["subject_p"] >= SUBJECT_P:  # confident it's the couple: never cut into them
             c = contain_subject(c, boxes[j], W, H)
+        if angles[j]:
+            c = rotate_crop(c, angles[j], W, H)
         out[i] = {k: round(float(v), 5) for k, v in c.items()}
         out[i]["CropConstrainAspectRatio"] = False
     return out
 
 
-def main(req_path, resp_path, models_dir, do_crop):
+def main(req_path, resp_path, models_dir, do_crop, straighten=True):
     photos = json.load(open(req_path, encoding="utf-8"))["photos"]
     keys = [p for p in photos if p.get("key")]
     if not keys:
@@ -148,7 +152,7 @@ def main(req_path, resp_path, models_dir, do_crop):
     n_crops = 0
     if do_crop:
         with open(os.path.join(models_dir, "crop.pkl"), "rb") as f:
-            crops = crop_settings(df, images, emb, pickle.load(f))
+            crops = crop_settings(df, images, emb, pickle.load(f), straighten)
         for i, c in crops.items():
             settings[i].update(c)
         n_crops = len(crops)
@@ -165,6 +169,7 @@ if __name__ == "__main__":
     ap.add_argument("request")
     ap.add_argument("response")
     ap.add_argument("--no-crop", action="store_true")
+    ap.add_argument("--no-straighten", action="store_true", help="crop without rotating")
     ap.add_argument("--models", default=os.path.join(ROOT, "models"))
     a = ap.parse_args()
-    main(a.request, a.response, a.models, not a.no_crop)
+    main(a.request, a.response, a.models, not a.no_crop, not a.no_straighten)

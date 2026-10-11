@@ -35,8 +35,8 @@ The plugin calls `.venv/Scripts/python.exe src/predict.py` in this repo, using `
 
 The other photos get the key photos' average settings (tone, presence, sharpening, noise
 reduction, vignette); exposure and white balance are adjusted per photo by the model. Photos that are
-not cropped yet get a crop framed around the dancers (not straightened; camera-rotated shots and
-photos with nobody detected are left uncropped). Key photos and existing crops are never changed;
+not cropped yet get a crop framed around the dancers, straightened using GeoCalib's estimate of the
+camera roll (camera-rotated shots and photos with nobody detected are left uncropped). Key photos and existing crops are never changed;
 one Ctrl+Z undoes the whole batch.
 
 **Retrain** after a season of new edits: re-run `extract.py`, `previews.py`, `features.py`,

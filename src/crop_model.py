@@ -158,15 +158,26 @@ def targets_to_crop(t, box, W, H):
     cx = (box[0] + box[2]) / 2 + t["t_dx"] * bh
     cy = (box[1] + box[3]) / 2 + t["t_dy"] * bh
     w, h = np.exp(t["t_logw"]) * bh, np.exp(t["t_logh"]) * bh
-    a = np.radians(abs(t["t_angle"]))
-    # bounding box of the rotated crop must fit in the image: scale down if needed, keep aspect
-    bw, bhh = w * np.cos(a) + h * np.sin(a), w * np.sin(a) + h * np.cos(a)
+    return _fit(cx, cy, w, h, float(t["t_angle"]), W, H)
+
+
+def _fit(cx, cy, w, h, angle, W, H):
+    """Crop dict whose rotated rectangle lies inside the image: shift first, then shrink (keeping aspect)."""
+    a = np.radians(abs(angle))
+    bw, bhh = w * np.cos(a) + h * np.sin(a), w * np.sin(a) + h * np.cos(a)  # bounding box of rotated crop
     s = min(1.0, W / bw, H / bhh)
     w, h, bw, bhh = w * s, h * s, bw * s, bhh * s
     cx = np.clip(cx, bw / 2, W - bw / 2)
     cy = np.clip(cy, bhh / 2, H - bhh / 2)
     return {"CropLeft": (cx - w / 2) / W, "CropRight": (cx + w / 2) / W,
-            "CropTop": (cy - h / 2) / H, "CropBottom": (cy + h / 2) / H, "CropAngle": float(t["t_angle"])}
+            "CropTop": (cy - h / 2) / H, "CropBottom": (cy + h / 2) / H, "CropAngle": float(angle)}
+
+
+def rotate_crop(c, angle, W, H):
+    """Apply a straightening angle to a crop, keeping its centre and size where the image allows."""
+    cx, cy = (c["CropLeft"] + c["CropRight"]) / 2 * W, (c["CropTop"] + c["CropBottom"]) / 2 * H
+    w, h = (c["CropRight"] - c["CropLeft"]) * W, (c["CropBottom"] - c["CropTop"]) * H
+    return _fit(cx, cy, w, h, angle, W, H)
 
 
 # Minimum space kept around the couple box, in units of couple height. Roughly the 10th percentile of

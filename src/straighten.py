@@ -68,6 +68,37 @@ def line_features(lines, crop, W, H, person_boxes=()):
     return f
 
 
+# GeoCalib camera roll -> CropAngle. Fitted on 1500 held-out cropped photos (tools/geocalib_eval.py):
+# CropAngle ~ -roll; scaling by 0.7 and skipping rotations under 0.5 deg minimised the error against
+# the photographer's own straightening (0.94 deg vs 1.29 for never rotating; wrong direction 5%).
+GEOCALIB_SCALE = 0.7
+DEAD_ZONE_DEG = 0.5
+SENSOR_WIDTH_MM = 35.9  # Sony A7 III
+_GEOCALIB = None
+
+
+def straighten_angles(images, focal_mm):
+    """CropAngle (degrees) for each PIL image from GeoCalib's gravity estimate; 0 for small tilts."""
+    import torch
+    from geocalib import GeoCalib
+    from torchvision.transforms.functional import to_tensor
+
+    global _GEOCALIB
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    if _GEOCALIB is None:
+        _GEOCALIB = GeoCalib(weights="pinhole").to(dev)
+    angles = []
+    for im, f in zip(images, focal_mm):
+        img = to_tensor(im.convert("RGB")).to(dev)
+        priors = None
+        if f and f == f:
+            priors = {"focal": torch.tensor(f / SENSOR_WIDTH_MM * img.shape[-1], device=dev, dtype=torch.float32)}
+        out = _GEOCALIB.calibrate(img, camera_model="pinhole", priors=priors)
+        a = -GEOCALIB_SCALE * float(torch.rad2deg(out["gravity"].rp[..., 0]).squeeze())
+        angles.append(0.0 if abs(a) < DEAD_ZONE_DEG else float(np.clip(a, -8, 8)))
+    return angles
+
+
 def main(data_dir):
     prev = pd.read_parquet(os.path.join(data_dir, "previews.parquet"))
     ids = prev[prev.ok].image_id.tolist()
