@@ -1,0 +1,21 @@
+# Personal data - never commit photos, catalogs or derived datasets
+data/
+*.lrcat
+*.lrcat-data
+*.lrdata/
+*.arw
+*.ARW
+*.dng
+*.DNG
+*.jpg
+*.JPG
+*.jpeg
+
+# Trained models
+models/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
