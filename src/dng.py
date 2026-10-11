@@ -37,7 +37,7 @@ def _read_ifd(f, offset, bo):
 
 
 def read_dng(path, min_width=1024):
-    """Return (jpeg_bytes or None, as_shot_neutral tuple or None).
+    """Return (jpeg_bytes or None, as_shot_neutral tuple or None, orientation int; 1 = normal).
 
     Picks the smallest embedded JPEG preview at least `min_width` wide (else the largest one)."""
     with open(path, "rb") as f:
@@ -66,4 +66,4 @@ def read_dng(path, min_width=1024):
         if best:
             f.seek(best[1])
             jpeg = f.read(best[2])
-        return jpeg, ifd0.get(50728)
+        return jpeg, ifd0.get(50728), ifd0.get(274, (1,))[0]

@@ -44,32 +44,45 @@ def tilt(gray):
     return float(a[order][np.searchsorted(cw, cw[-1] / 2)]), int(keep.sum())
 
 
-def main(data_dir):
+def load_pose_model():
     from ultralytics import YOLO
+    return YOLO(POSE_WEIGHTS)
 
-    prev = pd.read_parquet(os.path.join(data_dir, "previews.parquet"))
-    ids = prev[prev.ok].image_id.tolist()
-    paths = [os.path.join(data_dir, "previews", f"{i}.jpg") for i in ids]
-    model = YOLO(POSE_WEIGHTS)
+
+def analyse(model, images, verbose=False):
+    """Pose + tilt for a list of file paths or PIL images -> list of dicts (see module docstring)."""
+    from PIL import Image
+
     rows = []
-    for start in range(0, len(paths), BATCH):
-        batch = paths[start:start + BATCH]
+    for start in range(0, len(images), BATCH):
+        batch = images[start:start + BATCH]
         results = model.predict(batch, imgsz=1024, conf=0.25, verbose=False)
-        for image_id, path, r in zip(ids[start:start + BATCH], batch, results):
+        for im, r in zip(batch, results):
             boxes = r.boxes.xyxy.cpu().numpy()
             conf = r.boxes.conf.cpu().numpy()
             kpts = r.keypoints.data.cpu().numpy() if r.keypoints is not None else np.zeros((0, 17, 3))
             area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
             persons = [np.concatenate([boxes[i], [conf[i]], kpts[i].ravel()])
                        for i in np.argsort(-area)[:MAX_PERSONS]]
-            gray = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+            if isinstance(im, Image.Image):
+                gray = np.asarray(im.convert("L"))
+            else:
+                gray = cv2.imread(im, cv2.IMREAD_GRAYSCALE)
             t, n = tilt(gray)
-            rows.append({"image_id": image_id, "n_persons": len(boxes),
+            rows.append({"n_persons": len(boxes),
                          "persons": np.concatenate(persons).astype(np.float32).tolist() if persons else [],
                          "tilt_deg": t, "tilt_n": n})
-        if (start // BATCH) % 50 == 0:
-            print(f"  {min(start + BATCH, len(paths))}/{len(paths)}", flush=True)
-    pd.DataFrame(rows).to_parquet(os.path.join(data_dir, "pose.parquet"), index=False)
+        if verbose and (start // BATCH) % 50 == 0:
+            print(f"  {min(start + BATCH, len(images))}/{len(images)}", flush=True)
+    return rows
+
+
+def main(data_dir):
+    prev = pd.read_parquet(os.path.join(data_dir, "previews.parquet"))
+    ids = prev[prev.ok].image_id.tolist()
+    paths = [os.path.join(data_dir, "previews", f"{i}.jpg") for i in ids]
+    rows = analyse(load_pose_model(), paths, verbose=True)
+    pd.DataFrame(rows).assign(image_id=ids).to_parquet(os.path.join(data_dir, "pose.parquet"), index=False)
     print("done")
 
 

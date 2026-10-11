@@ -30,14 +30,19 @@ The plugin calls `.venv/Scripts/python.exe src/predict.py` in this repo, using `
 1. Edit 1-3 representative photos by hand (no need to crop the others first).
 2. Give those key photos a **green label** (press `8`).
 3. Select all photos of the event in Grid view.
-4. Library > Plug-in Extras > **Auto Edit from Key Photos (green label)** > Apply.
+4. Library > Plug-in Extras > **Auto Edit + Crop from Key Photos (green label)** > Apply
+   (or **... tone only** to skip cropping).
 
 The other photos get the key photos' average settings (tone, presence, sharpening, noise
-reduction, vignette); exposure and white balance are adjusted per photo by the model. Key photos and
-crops are left alone; one Ctrl+Z undoes the whole batch.
+reduction, vignette); exposure and white balance are adjusted per photo by the model. Photos that are
+not cropped yet get a crop framed around the dancers (not straightened; camera-rotated shots and
+photos with nobody detected are left uncropped). Key photos and existing crops are never changed;
+one Ctrl+Z undoes the whole batch.
 
-**Retrain** after a season of new edits: re-run `extract.py`, `previews.py`, `features.py`, then
-`python src/train_final.py <data_dir> models/autoedit.pkl`. `train.py` re-runs the evaluation.
+**Retrain** after a season of new edits: re-run `extract.py`, `previews.py`, `features.py`,
+`crop_features.py`, then `python src/train_final.py <data_dir> models/autoedit.pkl` and
+`python src/crop_train.py <data_dir> --save models/crop.pkl`. `train.py` / `crop_train.py` print the
+held-out evaluation.
 
 ## Data
 

@@ -21,19 +21,21 @@ MAX_SIDE = 1024
 
 
 def load_preview(path):
-    """Return (PIL image <= MAX_SIDE, wb_r, wb_b) for a DNG or other raw file, without writing anything."""
+    """Return (PIL image <= MAX_SIDE, wb_r, wb_b, upright) for a DNG or other raw file, without writing
+    anything. upright is False when the camera was rotated (portrait shots)."""
     if path.lower().endswith(".dng"):
-        jpeg, neutral = read_dng(path)
+        jpeg, neutral, orientation = read_dng(path)
         if jpeg and neutral:
             im = Image.open(io.BytesIO(jpeg))
             im.thumbnail((MAX_SIDE, MAX_SIDE))
-            return im, neutral[1] / neutral[0], neutral[1] / neutral[2]
+            return im, neutral[1] / neutral[0], neutral[1] / neutral[2], orientation == 1
     with rawpy.imread(path) as raw:
         wb = raw.camera_whitebalance
+        flip = raw.sizes.flip
         thumb = raw.extract_thumb()
     im = Image.open(io.BytesIO(thumb.data)) if thumb.format == rawpy.ThumbFormat.JPEG else Image.fromarray(thumb.data)
     im.thumbnail((MAX_SIDE, MAX_SIDE))
-    return im, wb[0] / wb[1], wb[2] / wb[1]
+    return im, wb[0] / wb[1], wb[2] / wb[1], flip == 0
 
 
 def process(row, prev_dir):
@@ -45,7 +47,7 @@ def process(row, prev_dir):
         return rec
     try:
         if path.lower().endswith(".dng"):
-            jpeg, neutral = read_dng(path)
+            jpeg, neutral, _ = read_dng(path)
             if jpeg and neutral:
                 rec.update(wb_r=neutral[1] / neutral[0], wb_b=neutral[1] / neutral[2])
                 if not os.path.isfile(out):
