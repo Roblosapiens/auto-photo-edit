@@ -27,7 +27,7 @@ import pandas as pd
 
 from crop_features import analyse, load_pose_model
 from crop_model import TARGETS as CROP_TARGETS
-from crop_model import photo_features, targets_to_crop
+from crop_model import SUBJECT_P, contain_subject, person_features, photo_features, targets_to_crop
 from features import clip_embed, exif_features, image_stats
 from model import HYBRID_TARGETS, SYNC_SLIDERS, add_derived, design
 from previews import load_preview
@@ -107,7 +107,11 @@ def crop_settings(df, images, emb, cm):
     rows, boxes, idx = [], [], []
     for i, pose in zip(todo, poses):
         W, H = images[i].size
-        box, f = photo_features(pose["persons"], W, H)
+        if not pose["persons"]:
+            continue
+        pf = person_features(pose["persons"], W, H, np.asarray(images[i].convert("L")))
+        probs = cm["selector"].predict_proba(pf[cm["sel_cols"]].astype(float))[:, 1]
+        box, f = photo_features(pose["persons"], W, H, probs)
         if box is None:  # nobody detected: leave this photo uncropped
             continue
         f.update(tilt_deg=pose["tilt_deg"], tilt_n=pose["tilt_n"], focal_length=df.focal_length[i])
@@ -124,6 +128,8 @@ def crop_settings(df, images, emb, cm):
     for j, i in enumerate(idx):
         W, H = images[i].size
         c = targets_to_crop(pred.iloc[j], boxes[j], W, H)
+        if rows[j]["subject_p"] >= SUBJECT_P:  # confident it's the couple: never cut into them
+            c = contain_subject(c, boxes[j], W, H)
         out[i] = {k: round(float(v), 5) for k, v in c.items()}
         out[i]["CropConstrainAspectRatio"] = False
     return out

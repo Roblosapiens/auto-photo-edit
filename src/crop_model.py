@@ -20,26 +20,73 @@ def unpack(persons):
     return a[:, :4], a[:, 4], a[:, 5:].reshape(-1, KP, 3)
 
 
-def pick_couple(boxes, W, H):
-    """Indices of the main dancer and partner (partner may be None)."""
+SUBJECT_P = 0.5  # a person counts as part of the subject couple above this classifier probability
+
+
+def sharpness(gray, box):
+    """log variance of the Laplacian inside a box minus that of the whole image (blurry foreground < 0)."""
+    import cv2
+
+    x0, y0, x1, y1 = [int(round(v)) for v in box]
+    patch = gray[max(y0, 0):max(y1, y0 + 2), max(x0, 0):max(x1, x0 + 2)]
+    lap = lambda a: np.log(cv2.Laplacian(a, cv2.CV_32F).var() + 1e-3)
+    return float(lap(patch) - lap(gray)) if patch.size > 16 else np.nan
+
+
+def person_features(persons, W, H, gray=None):
+    """One row per detected person, used by the subject classifier."""
+    boxes, conf, kpts = unpack(persons)
+    n = len(boxes)
+    w, h = boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1]
+    area = w * h
+    cx, cy = (boxes[:, 0] + boxes[:, 2]) / 2 / W, (boxes[:, 1] + boxes[:, 3]) / 2 / H
+    vis = kpts[:, :, 2] >= 0.5
+    rows = []
+    for i in range(n):
+        others = [j for j in range(n) if j != i]
+        gaps = [max(0.0, max(boxes[j, 0], boxes[i, 0]) - min(boxes[j, 2], boxes[i, 2])) / h[i] for j in others]
+        rows.append({
+            "cx": cx[i], "cy": cy[i], "w": w[i] / W, "h": h[i] / H, "x0": boxes[i, 0] / W, "x1": boxes[i, 2] / W,
+            "y0": boxes[i, 1] / H, "y1": boxes[i, 3] / H,
+            "area_rel": area[i] / area.max(), "h_rel": h[i] / h.max(), "rank": int((area > area[i]).sum()),
+            "n_persons": n, "centre_dist": np.hypot(cx[i] - 0.5, cy[i] - 0.5),
+            "edge_l": boxes[i, 0] < 3, "edge_r": boxes[i, 2] > W - 3, "edge_t": boxes[i, 1] < 3, "edge_b": boxes[i, 3] > H - 3,
+            "conf": conf[i], "kp_conf": kpts[i, :, 2].mean(), "kp_vis": vis[i].sum(),
+            "face_vis": vis[i, :5].sum(), "ankles_vis": vis[i, 15:].sum(),
+            "nearest_gap": min(gaps) if gaps else np.nan,
+            "sharp": sharpness(gray, boxes[i]) if gray is not None else np.nan,
+        })
+    return pd.DataFrame(rows)
+
+
+def pick_couple(boxes, W, H, probs=None):
+    """Indices of the main dancer and partner (partner may be None).
+
+    With `probs` (subject-classifier probabilities per person) the most likely subject is the main
+    dancer; otherwise a size x centrality heuristic is used."""
     if len(boxes) == 0:
         return None, None
     area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
-    cx = (boxes[:, 0] + boxes[:, 2]) / 2 / W
-    cy = (boxes[:, 1] + boxes[:, 3]) / 2 / H
-    centrality = 1 - np.clip(np.hypot(cx - 0.5, (cy - 0.5) * 0.6) / 0.7, 0, 1)
-    main = int(np.argmax(area * (0.3 + centrality)))
+    if probs is not None:
+        score = np.asarray(probs, float)
+    else:
+        cx = (boxes[:, 0] + boxes[:, 2]) / 2 / W
+        cy = (boxes[:, 1] + boxes[:, 3]) / 2 / H
+        score = area * (0.3 + 1 - np.clip(np.hypot(cx - 0.5, (cy - 0.5) * 0.6) / 0.7, 0, 1))
+    main = int(np.argmax(score))
     mh = boxes[main, 3] - boxes[main, 1]
     best, best_score = None, 0.0
     for j in range(len(boxes)):
         if j == main or area[j] < 0.2 * area[main]:
             continue
+        if probs is not None and probs[j] < SUBJECT_P:
+            continue
         gap = max(0.0, max(boxes[j, 0], boxes[main, 0]) - min(boxes[j, 2], boxes[main, 2]))
         if gap > 0.6 * mh:
             continue
-        score = area[j] / area[main] * (1 - gap / (0.6 * mh + 1e-6))
-        if score > best_score:
-            best, best_score = j, score
+        s = (probs[j] if probs is not None else area[j] / area[main]) * (1 - gap / (0.6 * mh + 1e-6))
+        if s > best_score:
+            best, best_score = j, s
     return main, best
 
 
@@ -52,16 +99,19 @@ def _lean(k):
     return np.degrees(np.arctan2(sx - hx, hy - sy))
 
 
-def photo_features(persons, W, H):
-    """Couple box + feature dict for one photo, or (None, None) when no person is found."""
+def photo_features(persons, W, H, probs=None):
+    """Couple box + feature dict for one photo, or (None, None) when no person is found.
+
+    f["subject_p"] is the lowest subject probability among the couple (NaN without probs)."""
     boxes, conf, kpts = unpack(persons)
-    main, partner = pick_couple(boxes, W, H)
+    main, partner = pick_couple(boxes, W, H, probs)
     if main is None:
         return None, None
     idx = [main] + ([partner] if partner is not None else [])
     box = np.array([boxes[idx, 0].min(), boxes[idx, 1].min(), boxes[idx, 2].max(), boxes[idx, 3].max()])
     bw, bh = box[2] - box[0], box[3] - box[1]
     f = {
+        "subject_p": min(probs[i] for i in idx) if probs is not None else np.nan,
         "b_x0": box[0] / W, "b_y0": box[1] / H, "b_x1": box[2] / W, "b_y1": box[3] / H,
         "b_w": bw / W, "b_h": bh / H, "b_aspect": bw / bh, "b_cx": (box[0] + box[2]) / 2 / W,
         "room_left": box[0] / bh, "room_right": (W - box[2]) / bh,
@@ -117,6 +167,29 @@ def targets_to_crop(t, box, W, H):
     cy = np.clip(cy, bhh / 2, H - bhh / 2)
     return {"CropLeft": (cx - w / 2) / W, "CropRight": (cx + w / 2) / W,
             "CropTop": (cy - h / 2) / H, "CropBottom": (cy + h / 2) / H, "CropAngle": float(t["t_angle"])}
+
+
+# Minimum space kept around the couple box, in units of couple height. Roughly the 10th percentile of
+# the margins in the photographer's own crops (they rarely cut into the couple).
+CONTAIN_MARGINS = {"top": 0.03, "bottom": 0.01, "left": 0.05, "right": 0.05}
+
+
+def contain_subject(c, box, W, H, margins=CONTAIN_MARGINS):
+    """Push out any edge of an unrotated crop that cuts into the couple box (+ margin), within the image."""
+    bh = box[3] - box[1]
+    c = dict(c)
+    c["CropLeft"] = max(0.0, min(c["CropLeft"], (box[0] - margins["left"] * bh) / W))
+    c["CropRight"] = min(1.0, max(c["CropRight"], (box[2] + margins["right"] * bh) / W))
+    c["CropTop"] = max(0.0, min(c["CropTop"], (box[1] - margins["top"] * bh) / H))
+    c["CropBottom"] = min(1.0, max(c["CropBottom"], (box[3] + margins["bottom"] * bh) / H))
+    return c
+
+
+def cuts_subject(c, box, W, H, tol=0.02):
+    """True if an unrotated crop cuts more than tol x couple height into the couple box (image edges excused)."""
+    bh, t = box[3] - box[1], tol * (box[3] - box[1])
+    return bool((box[0] - c["CropLeft"] * W < -t and box[0] > 3) or (c["CropRight"] * W - box[2] < -t and box[2] < W - 3)
+                or (box[1] - c["CropTop"] * H < -t and box[1] > 3) or (c["CropBottom"] * H - box[3] < -t and box[3] < H - 3))
 
 
 def crop_polygon(c, W, H):
