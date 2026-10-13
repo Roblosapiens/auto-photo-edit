@@ -17,6 +17,8 @@ Target: Lightroom Classic 7.0 (process version 2012 sliders), Windows.
 
 The graphics' sources are `docs/src/*.dc.html`; re-render the PNGs with `python tools/render_docs.py`.
 
+Want to do this for your own catalog? See [docs/build-your-own.md](docs/build-your-own.md).
+
 ## Plan
 
 1. **Extract** - read develop settings + EXIF from a *copy* of the `.lrcat` catalog; render a neutral
