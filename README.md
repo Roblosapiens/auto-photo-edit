@@ -2,11 +2,20 @@
 
 Learn a photographer's Lightroom editing style from their existing catalog and apply it to new photos.
 
-The model predicts Lightroom develop settings (white balance, tone, presence, sharpening, noise
-reduction, vignette, dehaze, later crop) from the unedited photo and its EXIF data. A Lightroom
-plugin applies the predicted settings, so every edit stays non-destructive and adjustable.
+The models predict Lightroom develop settings (white balance, tone, presence, sharpening, noise
+reduction, vignette, dehaze), a crop framed around the dancing couple and a straightening angle from
+the unedited photo and its EXIF data. A Lightroom plugin applies the predicted settings, so every
+edit stays non-destructive and adjustable. Everything runs locally; no pixels are generated.
 
 Target: Lightroom Classic 7.0 (process version 2012 sliders), Windows.
+
+![Auto Photo Edit overview](docs/infographic.png)
+
+## Architecture
+
+![Software architecture](docs/architecture.png)
+
+The graphics' sources are `docs/src/*.dc.html`; re-render the PNGs with `python tools/render_docs.py`.
 
 ## Plan
 
