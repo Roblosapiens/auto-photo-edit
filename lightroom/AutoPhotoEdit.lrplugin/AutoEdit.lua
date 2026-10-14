@@ -1,2 +1,2 @@
 -- Library > Plug-in Extras > Auto Edit + Crop from Key Photos (green label)
-require('AutoEditCore').start(true)
+require('AutoEditCore').start('crop')

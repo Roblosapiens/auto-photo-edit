@@ -48,7 +48,22 @@ The other photos get the key photos' average settings (tone, presence, sharpenin
 reduction, vignette); exposure and white balance are adjusted per photo by the model. Photos that are
 not cropped yet get a crop framed around the dancers, straightened using GeoCalib's estimate of the
 camera roll (camera-rotated shots and photos with nobody detected are left uncropped). Key photos and existing crops are never changed;
-one Ctrl+Z undoes the whole batch.
+one Ctrl+Z undoes the whole batch. Progress shows in Lightroom's activity bar while the models run.
+
+**Try again with different key photos:** change which photos are green, select the event and run
+**Auto Edit + Crop: redo from key photos**. Photos still as the plugin left them are fully redone
+(including their crop). A crop you adjusted by hand is kept. If you changed a photo's tone by hand
+since its last auto edit, the plugin asks whether to keep it or redo it too. This works after
+restarting Lightroom, when Ctrl+Z is no longer available.
+
+**Catalog fields:** every auto-edited photo records *Auto edited* (date) and *Auto edit mode* in the
+catalog (never in the image files). Show them with the Metadata panel's **Auto Photo Edit** tagset, or
+filter by them in the Library Filter bar (Metadata). A hidden field stores the values applied, which
+is how redo recognises hand edits. When the plugin first loads with these fields, Lightroom asks to
+update the catalog; that's expected.
+
+**Updating the plugin:** File > Plug-in Manager > Auto Photo Edit > Reload Plug-in.
+`python tests/test_plugin.py` runs the plugin's Lua against a fake Lightroom.
 
 **Retrain** after a season of new edits: re-run `extract.py`, `previews.py`, `features.py`,
 `crop_features.py`, then `python src/train_final.py <data_dir> models/autoedit.pkl` and
