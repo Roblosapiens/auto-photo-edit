@@ -77,7 +77,7 @@ SENSOR_WIDTH_MM = 35.9  # Sony A7 III
 _GEOCALIB = None
 
 
-def straighten_angles(images, focal_mm):
+def straighten_angles(images, focal_mm, on_progress=None):
     """CropAngle (degrees) for each PIL image from GeoCalib's gravity estimate; 0 for small tilts."""
     import torch
     from geocalib import GeoCalib
@@ -95,7 +95,9 @@ def straighten_angles(images, focal_mm):
             priors = {"focal": torch.tensor(f / SENSOR_WIDTH_MM * img.shape[-1], device=dev, dtype=torch.float32)}
         out = _GEOCALIB.calibrate(img, camera_model="pinhole", priors=priors)
         a = -GEOCALIB_SCALE * float(torch.rad2deg(out["gravity"].rp[..., 0]).squeeze())
-        angles.append(0.0 if abs(a) < DEAD_ZONE_DEG else float(np.clip(a, -8, 8)))
+        angles.append(0.0 if not np.isfinite(a) or abs(a) < DEAD_ZONE_DEG else float(np.clip(a, -8, 8)))
+        if on_progress:
+            on_progress(len(angles), len(images))
     return angles
 
 

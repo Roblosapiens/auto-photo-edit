@@ -58,7 +58,7 @@ def exif_features(df):
     })
 
 
-def clip_embed(images, verbose=False):
+def clip_embed(images, verbose=False, on_progress=None):
     """CLIP ViT-B/32 embeddings (unit length) for a list of file paths or PIL images."""
     import open_clip
     import torch
@@ -74,6 +74,8 @@ def clip_embed(images, verbose=False):
             out.append((e / e.norm(dim=-1, keepdim=True)).float().cpu().numpy())
             if verbose:
                 print(f"  embedded {min(i + 128, len(images))}/{len(images)}", flush=True)
+            if on_progress:
+                on_progress(min(i + 128, len(images)), len(images))
     return np.concatenate(out)
 
 

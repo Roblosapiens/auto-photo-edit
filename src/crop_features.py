@@ -49,7 +49,7 @@ def load_pose_model():
     return YOLO(POSE_WEIGHTS)
 
 
-def analyse(model, images, verbose=False):
+def analyse(model, images, verbose=False, on_progress=None):
     """Pose + tilt for a list of file paths or PIL images -> list of dicts (see module docstring)."""
     from PIL import Image
 
@@ -72,6 +72,8 @@ def analyse(model, images, verbose=False):
             rows.append({"n_persons": len(boxes),
                          "persons": np.concatenate(persons).astype(np.float32).tolist() if persons else [],
                          "tilt_deg": t, "tilt_n": n})
+        if on_progress:
+            on_progress(min(start + BATCH, len(images)), len(images))
         if verbose and (start // BATCH) % 50 == 0:
             print(f"  {min(start + BATCH, len(images))}/{len(images)}", flush=True)
     return rows

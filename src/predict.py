@@ -38,11 +38,32 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COCOA_EPOCH = pd.Timestamp("2001-01-01")  # Lightroom's dateTimeOriginal is seconds since 2001
 INTEGER_SLIDERS = set(SYNC_SLIDERS) - {"SharpenRadius"}
 LIMITS = {"Exposure2012": (-5, 5), "Temperature": (2000, 50000)}
+PROGRESS_PATH = None
+
+
+def report(stage, done, total):
+    """Write '<stage> TAB <done> TAB <total>' for the plugin's progress bar (best effort, atomic)."""
+    if not PROGRESS_PATH:
+        return
+    try:
+        tmp = PROGRESS_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(f"{stage}\t{done}\t{total}\n")
+        os.replace(tmp, PROGRESS_PATH)
+    except OSError:  # the plugin may be reading the file at that moment; the next update will land
+        pass
+
+
+def stage(name):
+    return lambda done, total: report(name, done, total)
 
 
 def build_frame(photos):
+    loaded = []
     with ThreadPoolExecutor(8) as pool:
-        loaded = list(pool.map(lambda p: load_preview(p["path"]), photos))
+        for k, item in enumerate(pool.map(lambda p: load_preview(p["path"]), photos), 1):
+            loaded.append(item)
+            report("Reading photos", k, len(photos))
     images = [im for im, _, _, _ in loaded]
     df = pd.DataFrame({
         "id": [p["id"] for p in photos],
@@ -58,10 +79,15 @@ def build_frame(photos):
         "captureTime": [str(COCOA_EPOCH + pd.Timedelta(seconds=p["time"])) if p.get("time") else None for p in photos],
         "wb_r": [r for _, r, _, _ in loaded], "wb_b": [b for _, _, b, _ in loaded],
     })
-    stats = pd.DataFrame([image_stats(im) for im in images])
+    stats = []
+    for k, im in enumerate(images, 1):
+        stats.append(image_stats(im))
+        report("Measuring light", k, len(images))
+    stats = pd.DataFrame(stats)
     feats = pd.concat([exif_features(df.assign(image_id=df.id)).drop(columns="image_id"), stats], axis=1)
     frame = pd.concat([df[["id", "key", "cropped", "upright", "folder", "captureTime"]], feats], axis=1)
-    return frame, images, clip_embed(images)
+    report("Describing scenes", 0, len(images))
+    return frame, images, clip_embed(images, on_progress=stage("Describing scenes"))
 
 
 def tone_settings(df, keys, emb, m):
@@ -104,7 +130,8 @@ def crop_settings(df, images, emb, cm, straighten=True):
     todo = df.index[~df.key & ~df.cropped & df.upright].tolist()
     if not todo:
         return {}
-    poses = analyse(load_pose_model(), [images[i] for i in todo])
+    report("Finding dancers", 0, len(todo))
+    poses = analyse(load_pose_model(), [images[i] for i in todo], on_progress=stage("Finding dancers"))
     rows, boxes, idx = [], [], []
     for i, pose in zip(todo, poses):
         W, H = images[i].size
@@ -125,7 +152,11 @@ def crop_settings(df, images, emb, cm, straighten=True):
     M = np.hstack([X.to_numpy(float), cm["pca"].transform(emb[idx])])
     pred = pd.DataFrame({t: cm["models"][t].predict(M) for t in CROP_TARGETS})
     pred["t_angle"] = 0.0  # the crop model's own angle was no better than 0; GeoCalib straightens below
-    angles = straighten_angles([images[i] for i in idx], df.focal_length[idx].tolist()) if straighten else [0.0] * len(idx)
+    if straighten:
+        report("Straightening", 0, len(idx))
+        angles = straighten_angles([images[i] for i in idx], df.focal_length[idx].tolist(), on_progress=stage("Straightening"))
+    else:
+        angles = [0.0] * len(idx)
     out = {}
     for j, i in enumerate(idx):
         W, H = images[i].size
@@ -134,6 +165,8 @@ def crop_settings(df, images, emb, cm, straighten=True):
             c = contain_subject(c, boxes[j], W, H)
         if angles[j]:
             c = rotate_crop(c, angles[j], W, H)
+        if not all(np.isfinite(float(v)) for v in c.values()):  # never hand Lightroom a broken crop
+            continue
         out[i] = {k: round(float(v), 5) for k, v in c.items()}
         out[i]["CropConstrainAspectRatio"] = False
     return out
@@ -160,7 +193,10 @@ def main(req_path, resp_path, models_dir, do_crop, straighten=True):
     with open(resp_path, "w", encoding="utf-8") as f:
         for i, vals in settings.items():
             for k, v in vals.items():
+                if isinstance(v, float) and not math.isfinite(v):  # never hand Lightroom NaN/inf
+                    continue
                 f.write(f"{df.id[i]}\t{k}\t{str(v).lower() if isinstance(v, bool) else v}\n")
+    report("Done", len(settings), len(settings))
     print(f"{len(keys)} key photos -> settings for {len(settings)} photos, crops for {n_crops}")
 
 
@@ -171,5 +207,7 @@ if __name__ == "__main__":
     ap.add_argument("--no-crop", action="store_true")
     ap.add_argument("--no-straighten", action="store_true", help="crop without rotating")
     ap.add_argument("--models", default=os.path.join(ROOT, "models"))
+    ap.add_argument("--progress", help="file the plugin polls for progress updates")
     a = ap.parse_args()
+    PROGRESS_PATH = a.progress
     main(a.request, a.response, a.models, not a.no_crop, not a.no_straighten)

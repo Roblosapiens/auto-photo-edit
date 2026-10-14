@@ -82,6 +82,19 @@ local function parseValue(val)
 	return tonumber(val) or val
 end
 
+-- True when applying `s` would change anything in the photo's current develop settings.
+local function differs(current, s)
+	for k, v in pairs(s) do
+		local c = current[k]
+		if type(v) == 'number' then
+			if type(c) ~= 'number' or math.abs(c - v) > 0.001 then return true end
+		elseif c ~= v then
+			return true
+		end
+	end
+	return false
+end
+
 local function parseResponse(path)
 	local settings, count, crops = {}, 0, 0
 	for line in io.lines(path) do
@@ -111,7 +124,7 @@ local function run(context, withCrop)
 	})
 	local flashText = catalog:batchGetFormattedMetadata(selected, { 'flash' })
 
-	local photos, byId, records, nKeys, nSkipped, nCropped = {}, {}, {}, 0, 0, 0
+	local photos, byId, currentById, records, nKeys, nSkipped, nCropped = {}, {}, {}, {}, 0, 0, 0
 	for _, photo in ipairs(selected) do
 		local m = meta[photo]
 		if RAW_FORMATS[m.fileFormat] then
@@ -134,6 +147,7 @@ local function run(context, withCrop)
 			records[#records + 1] = jsonObject(rec, extra)
 			photos[#photos + 1] = photo
 			byId[photo.localIdentifier] = photo
+			currentById[photo.localIdentifier] = develop
 		else
 			nSkipped = nSkipped + 1
 		end
@@ -158,18 +172,36 @@ local function run(context, withCrop)
 	local reqPath = LrPathUtils.child(tmp, 'autoedit_request.json')
 	local respPath = LrPathUtils.child(tmp, 'autoedit_response.tsv')
 	local logPath = LrPathUtils.child(tmp, 'autoedit_log.txt')
+	local progressPath = LrPathUtils.child(tmp, 'autoedit_progress.txt')
 	LrFileUtils.delete(respPath)
+	LrFileUtils.delete(progressPath)
 
 	local f = io.open(reqPath, 'w')
 	f:write('{"photos":[' .. table.concat(records, ',\n') .. ']}')
 	f:close()
 
-	local progress = LrProgressScope { title = 'Auto Edit: analysing ' .. #photos .. ' photos', functionContext = context }
-	progress:setCaption(withCrop and 'Running the models (about 1 second per photo)...' or 'Running the model (about 10-30 seconds)...')
+	local progress = LrProgressScope { title = 'Auto Edit: ' .. #photos .. ' photos', functionContext = context }
+	progress:setCaption('Starting the models...')
 	-- On Windows LrTasks.execute needs the whole command wrapped in an extra pair of quotes
 	local cmd = '"' .. '"' .. PYTHON .. '" "' .. SCRIPT .. '" "' .. reqPath .. '" "' .. respPath .. '"'
-		.. (withCrop and '' or ' --no-crop') .. ' > "' .. logPath .. '" 2>&1' .. '"'
-	local status = LrTasks.execute(cmd)
+		.. (withCrop and '' or ' --no-crop') .. ' --progress "' .. progressPath .. '"'
+		.. ' > "' .. logPath .. '" 2>&1' .. '"'
+
+	-- Run Python in its own task and poll its progress file, so Lightroom's activity bar moves.
+	local status, finished = nil, false
+	LrTasks.startAsyncTask(function()
+		status = LrTasks.execute(cmd)
+		finished = true
+	end)
+	while not finished do
+		LrTasks.sleep(0.5)
+		local stage, done, total = readFile(progressPath):match('^([^\t]+)\t(%d+)\t(%d+)')
+		if stage then
+			done, total = tonumber(done), tonumber(total)
+			progress:setCaption(string.format('%s: %d of %d', stage, done, total))
+			if total > 0 then progress:setPortionComplete(done, total) end
+		end
+	end
 	progress:done()
 
 	if status ~= 0 or not LrFileUtils.exists(respPath) then
@@ -178,7 +210,25 @@ local function run(context, withCrop)
 	end
 
 	local settings, count, crops = parseResponse(respPath)
-	local info = string.format('%d key photo(s) -> %d photo(s) will be updated.', nKeys, count)
+	-- Only apply to photos whose settings would actually change
+	local changed, nChanged = {}, 0
+	for id, s in pairs(settings) do
+		if currentById[id] and differs(currentById[id], s) then
+			changed[id] = s
+			nChanged = nChanged + 1
+		end
+	end
+	if nChanged == 0 then
+		LrDialogs.message('Auto Edit: nothing to change',
+			string.format('All %d photo(s) already have these settings, so there is nothing to apply.', count), 'info')
+		return
+	end
+	settings = changed
+
+	local info = string.format('%d key photo(s) -> %d photo(s) will be updated.', nKeys, nChanged)
+	if count > nChanged then
+		info = info .. string.format('\n%d already have these settings and are skipped.', count - nChanged)
+	end
 	if withCrop then
 		info = info .. string.format('\n%d of them get a crop (straightened where the camera was tilted).', crops)
 		if nCropped > 0 then
@@ -193,14 +243,23 @@ local function run(context, withCrop)
 		return
 	end
 
+	local applied = 0
 	catalog:withWriteAccessDo(withCrop and 'Auto Edit + Crop' or 'Auto Edit', function()
 		for id, s in pairs(settings) do
 			local photo = byId[id]
 			if photo then
 				photo:applyDevelopSettings(s)
+				applied = applied + 1
 			end
 		end
 	end, { timeout = 120 })
+
+	local doneText = string.format('Auto Edit applied to %d photo(s)', applied)
+	if LrDialogs.showBezel then
+		LrDialogs.showBezel(doneText)
+	else
+		LrDialogs.message('Auto Edit finished', doneText .. '. Undo with Ctrl+Z.', 'info')
+	end
 end
 
 local function start(withCrop)
@@ -212,4 +271,4 @@ local function start(withCrop)
 	end)
 end
 
-return { start = start, jsonObject = jsonObject, parseResponse = parseResponse, isCropped = isCropped }
+return { start = start, jsonObject = jsonObject, parseResponse = parseResponse, isCropped = isCropped, differs = differs }
