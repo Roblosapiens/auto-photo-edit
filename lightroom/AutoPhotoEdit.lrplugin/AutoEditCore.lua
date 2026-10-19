@@ -111,6 +111,28 @@ local function differs(current, s)
 	return false
 end
 
+-- Photos predict.py could not read ("<id> TAB <reason>" lines) -> list of ids
+local function readSkipped(path)
+	local ids = {}
+	local f = io.open(path, 'r')
+	if not f then return ids end
+	for line in f:lines() do
+		local id = line:match('^(%d+)\t')
+		if id then ids[#ids + 1] = tonumber(id) end
+	end
+	f:close()
+	return ids
+end
+
+-- "a.dng, b.dng, c.dng and 4 more"
+local function nameList(names, max)
+	local shown = {}
+	for i = 1, math.min(#names, max) do shown[i] = names[i] end
+	local s = table.concat(shown, ', ')
+	if #names > max then s = s .. string.format(' and %d more', #names - max) end
+	return s
+end
+
 local function parseResponse(path)
 	local settings, count, crops = {}, 0, 0
 	for line in io.lines(path) do
@@ -232,7 +254,7 @@ local function run(context, mode)
 	end
 
 	-- Build the request; remember which photos must be left alone
-	local records, byId, currentById, keep, nCropped = {}, {}, {}, {}, 0
+	local records, byId, currentById, keep, nCropped, pathById = {}, {}, {}, {}, 0, {}
 	for _, item in ipairs(items) do
 		local photo, m = item.photo, item.meta
 		local id = photo.localIdentifier
@@ -256,6 +278,7 @@ local function run(context, mode)
 		records[#records + 1] = jsonObject(rec, item.key and { settings = jsonObject(item.develop) } or nil)
 		byId[id] = photo
 		currentById[id] = item.develop
+		pathById[id] = m.path
 	end
 
 	local tmp = LrPathUtils.getStandardFilePath('temp')
@@ -264,6 +287,7 @@ local function run(context, mode)
 	local logPath = LrPathUtils.child(tmp, 'autoedit_log.txt')
 	local progressPath = LrPathUtils.child(tmp, 'autoedit_progress.txt')
 	LrFileUtils.delete(respPath)
+	LrFileUtils.delete(respPath .. '.skipped')
 	LrFileUtils.delete(progressPath)
 
 	local f = io.open(reqPath, 'w')
@@ -300,6 +324,15 @@ local function run(context, mode)
 	end
 
 	local settings, count, crops = parseResponse(respPath)
+	local skippedNames = {}
+	for _, id in ipairs(readSkipped(respPath .. '.skipped')) do
+		skippedNames[#skippedNames + 1] = pathById[id] and LrPathUtils.leafName(pathById[id]) or tostring(id)
+	end
+	local skippedText = ''
+	if #skippedNames > 0 then
+		skippedText = string.format('\n\n%d photo(s) could not be read (damaged or missing files) and were left alone: %s',
+			#skippedNames, nameList(skippedNames, 12))
+	end
 	-- Only apply to photos that may be changed and whose settings would actually change
 	local changed, nChanged, nNewCrops = {}, 0, 0
 	for id, s in pairs(settings) do
@@ -314,7 +347,8 @@ local function run(context, mode)
 
 	if nChanged == 0 then
 		LrDialogs.message('Auto Edit: nothing to change',
-			string.format('All %d photo(s) already have these settings, so there is nothing to apply.', count - nKept), 'info')
+			string.format('All %d photo(s) already have these settings, so there is nothing to apply.', count - nKept)
+				.. skippedText, 'info')
 		return
 	end
 
@@ -334,7 +368,7 @@ local function run(context, mode)
 	if nSkipped > 0 then
 		info = info .. string.format('\n%d non-raw file(s) in the selection are left alone.', nSkipped)
 	end
-	info = info .. '\nKey photos are not changed. Undo with Ctrl+Z.'
+	info = info .. '\nKey photos are not changed. Undo with Ctrl+Z.' .. skippedText
 	if LrDialogs.confirm('Apply ' .. MODE_TITLES[mode] .. '?', info, 'Apply', 'Cancel') ~= 'ok' then
 		return
 	end

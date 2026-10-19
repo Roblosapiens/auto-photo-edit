@@ -58,12 +58,31 @@ def stage(name):
     return lambda done, total: report(name, done, total)
 
 
-def build_frame(photos):
-    loaded = []
+def safe_load(path):
+    """load_preview, fully decoded; (None, reason) if the file is damaged or unreadable."""
+    try:
+        item = load_preview(path)
+        item[0].load()  # PIL decodes lazily: force it so a truncated preview fails here
+        return item, None
+    except Exception as e:  # damaged copies, missing files, unreadable disks
+        return None, f"{type(e).__name__}: {e}"[:200]
+
+
+def load_all(photos):
+    """Load every photo's preview. Returns (photos that loaded, their previews, [(id, reason)] skipped)."""
+    good, loaded, skipped = [], [], []
     with ThreadPoolExecutor(8) as pool:
-        for k, item in enumerate(pool.map(lambda p: load_preview(p["path"]), photos), 1):
-            loaded.append(item)
+        for k, (p, (item, err)) in enumerate(zip(photos, pool.map(lambda p: safe_load(p["path"]), photos)), 1):
+            if err:
+                skipped.append((p["id"], err))
+            else:
+                good.append(p)
+                loaded.append(item)
             report("Reading photos", k, len(photos))
+    return good, loaded, skipped
+
+
+def build_frame(photos, loaded):
     images = [im for im, _, _, _ in loaded]
     df = pd.DataFrame({
         "id": [p["id"] for p in photos],
@@ -174,13 +193,22 @@ def crop_settings(df, images, emb, cm, straighten=True):
 
 def main(req_path, resp_path, models_dir, do_crop, straighten=True):
     photos = json.load(open(req_path, encoding="utf-8"))["photos"]
+    if not any(p.get("key") for p in photos):
+        sys.exit("No key photos: give 1-3 edited photos in the selection a green label.")
+    photos, loaded, skipped = load_all(photos)
+    with open(resp_path + ".skipped", "w", encoding="utf-8") as f:  # the plugin lists these to the user
+        for pid, reason in skipped:
+            f.write(f"{pid}\t{reason}\n")
     keys = [p for p in photos if p.get("key")]
     if not keys:
-        sys.exit("No key photos: give 1-3 edited photos in the selection a green label.")
+        sys.exit("None of the green-labelled key photos could be read (damaged or missing files). "
+                 "Fix or replace them, or label other photos green.")
+    if len(photos) == len(keys):
+        sys.exit("Only the key photos could be read; every other photo is damaged or missing.")
     with open(os.path.join(models_dir, "autoedit.pkl"), "rb") as f:
         tone_model = pickle.load(f)
 
-    df, images, emb = build_frame(photos)
+    df, images, emb = build_frame(photos, loaded)
     settings = tone_settings(df, keys, emb, tone_model)
     n_crops = 0
     if do_crop:
@@ -197,7 +225,7 @@ def main(req_path, resp_path, models_dir, do_crop, straighten=True):
                     continue
                 f.write(f"{df.id[i]}\t{k}\t{str(v).lower() if isinstance(v, bool) else v}\n")
     report("Done", len(settings), len(settings))
-    print(f"{len(keys)} key photos -> settings for {len(settings)} photos, crops for {n_crops}")
+    print(f"{len(keys)} key photos -> settings for {len(settings)} photos, crops for {n_crops}, skipped {len(skipped)} unreadable")
 
 
 if __name__ == "__main__":

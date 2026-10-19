@@ -32,6 +32,9 @@ function fake_python(reqPath, respPath)
     end
   end
   out:close()
+  if SKIP_ID then
+    local sk = io.open(respPath .. '.skipped', 'w'); sk:write(SKIP_ID .. '\tOSError: image file is truncated\n'); sk:close()
+  end
 end
 
 local catalog = {}
@@ -53,6 +56,7 @@ local mods = {
   LrFunctionContext = {callWithContext = function(_, fn) fn({}) end},
   LrPathUtils = {
     parent = function(p) return p end,
+    leafName = function(p) return p:match('[^/\\]+$') end,
     child = function(a, b) if a == 'TMPDIR' then return TMP .. '/' .. b end return a .. '/' .. b end,
     getStandardFilePath = function() return 'TMPDIR' end,
   },

@@ -49,6 +49,16 @@ def test_normal_then_redo():
     assert any("nothing to change" in log[i] for i in range(1, len(log) + 1)), "no-op redo says so"
 
 
+def test_damaged_photo_is_named():
+    lua, run = setup()
+    lua.execute('SKIP_ID = 5; answers = {"ok"}')
+    run("crop")
+    log = lua.eval("log")
+    text = " ".join(log[i] for i in range(1, len(log) + 1))
+    assert "could not be read" in text and "p5.dng" in text, text
+
+
 if __name__ == "__main__":
     test_normal_then_redo()
+    test_damaged_photo_is_named()
     print("plugin tests passed")
