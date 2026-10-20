@@ -70,6 +70,22 @@ update the catalog; that's expected.
 `python src/crop_train.py <data_dir> --save models/crop.pkl`. `train.py` / `crop_train.py` print the
 held-out evaluation.
 
+## Offline by default
+
+Every pipeline script switches its own process offline (`src/offline.py`): Hugging Face Hub offline with
+telemetry off, Ultralytics offline (no online probe, so no analytics or automatic downloads), and a
+network guard that blocks and logs any other outbound connection. Nothing system-wide is changed.
+Models load from local caches; the only part that uses the network is the explicit
+`python tools/update_models.py --all` (downloads/refreshes CLIP, YOLO pose and GeoCalib weights).
+`python tests/test_offline.py <request.json>` runs the real prediction with the network blocked and
+checks it matches a normal run. Results are deterministic: the same request gives the same numbers.
+
+## Experiments
+
+* [Which image embedding?](docs/experiments/embedding-comparison.md) - hand-engineered features vs CLIP
+  ViT-B/32, CLIP ViT-L/14 and DINOv2 on identical held-out events, with per-event confidence intervals,
+  runtime/memory and a detailed crop-failure analysis. Production stays on CLIP ViT-B/32.
+
 ## Data
 
 Nothing personal is committed: catalogs, photos, extracted datasets (`data/`) and models

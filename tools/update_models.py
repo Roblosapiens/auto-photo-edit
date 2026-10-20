@@ -29,6 +29,12 @@ def update_clip(spec):
     print(f"CLIP {arch} ({tag}): cached")
 
 
+def update_timm(name):
+    import timm
+    timm.create_model(name, pretrained=True, num_classes=0)
+    print(f"timm {name}: cached")
+
+
 def update_yolo(name):
     from ultralytics.utils.downloads import attempt_download_asset
     dest = ROOT / "models" / name
@@ -57,12 +63,15 @@ def update_geocalib():
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--clip", nargs="*", help="open_clip 'arch:pretrained' specs")
+    ap.add_argument("--timm", nargs="*", help="timm model names, e.g. vit_base_patch14_dinov2.lvd142m")
     ap.add_argument("--yolo", help="Ultralytics asset name, e.g. yolo11m-pose.pt")
     ap.add_argument("--geocalib", action="store_true")
     ap.add_argument("--all", action="store_true", help="the production models")
     a = ap.parse_args()
     for spec in (a.clip or []) + ([PRODUCTION_CLIP] if a.all else []):
         update_clip(spec)
+    for name in a.timm or []:
+        update_timm(name)
     if a.yolo or a.all:
         update_yolo(a.yolo or "yolo11m-pose.pt")
     if a.geocalib or a.all:
