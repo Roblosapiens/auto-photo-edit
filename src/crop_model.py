@@ -99,12 +99,13 @@ def _lean(k):
     return np.degrees(np.arctan2(sx - hx, hy - sy))
 
 
-def photo_features(persons, W, H, probs=None):
+def photo_features(persons, W, H, probs=None, pick=None):
     """Couple box + feature dict for one photo, or (None, None) when no person is found.
 
-    f["subject_p"] is the lowest subject probability among the couple (NaN without probs)."""
+    f["subject_p"] is the lowest subject probability among the couple (NaN without probs).
+    pick=(main, partner) overrides the couple choice (used by experiments)."""
     boxes, conf, kpts = unpack(persons)
-    main, partner = pick_couple(boxes, W, H, probs)
+    main, partner = pick if pick is not None else pick_couple(boxes, W, H, probs)
     if main is None:
         return None, None
     idx = [main] + ([partner] if partner is not None else [])

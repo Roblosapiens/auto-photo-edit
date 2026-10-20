@@ -82,6 +82,7 @@ checks it matches a normal run. Results are deterministic: the same request give
 
 ## Experiments
 
+* [Partner selection vs multi-person protection](docs/experiments/partner-and-protection.md) - pairwise partner classifier vs protecting every confidently-kept person; protection cuts couple truncation by a third.
 * [Which image embedding?](docs/experiments/embedding-comparison.md) - hand-engineered features vs CLIP
   ViT-B/32, CLIP ViT-L/14 and DINOv2 on identical held-out events, with per-event confidence intervals,
   runtime/memory and a detailed crop-failure analysis. Production stays on CLIP ViT-B/32.
