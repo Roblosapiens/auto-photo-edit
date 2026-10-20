@@ -24,7 +24,7 @@ from shapely.geometry import Polygon
 from sklearn.decomposition import PCA
 from sklearn.model_selection import GroupKFold
 
-from crop_model import (SUBJECT_P, TARGETS, contain_subject, crop_polygon, crop_to_targets, cuts_subject,
+from crop_model import (TARGETS, crop_polygon, crop_to_targets, cuts_subject, pick_couple, protect_subjects,
                         person_features, photo_features, targets_to_crop, unpack)
 
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
@@ -106,6 +106,7 @@ def main(data_dir, save):
 
     # Stage 2: crop model on the classifier's couple
     X, boxes, keep = photo_rows(df, probs_by_photo)
+    probs_kept = [probs_by_photo[i] for i in keep]
     df = df.iloc[keep].reset_index(drop=True)
     emb = emb_all.loc[df.image_id].to_numpy()
     feat_cols = [c for c in X.columns if c not in TARGETS]
@@ -132,8 +133,9 @@ def main(data_dir, save):
         full = {"CropLeft": 0, "CropTop": 0, "CropRight": 1, "CropBottom": 1, "CropAngle": 0}
         # no straightening: the predicted angle was no better than 0 (see angle error below)
         pc = targets_to_crop({**pred.loc[i].to_dict(), "t_angle": 0.0}, boxes[i], W[i], H[i])
-        confident = X.subject_p[i] >= SUBJECT_P
-        pcc = contain_subject(pc, boxes[i], W[i], H[i]) if confident else pc
+        # production no-cut rule: the couple plus everyone likely to be kept (crop_model.protect_subjects)
+        pick = pick_couple(unpack(df.persons[i])[0], W[i], H[i], np.asarray(probs_kept[i]))
+        pcc = protect_subjects(pc, boxes[i], df.persons[i], probs_kept[i], {p for p in pick if p is not None}, W[i], H[i])
         pred_crops.append(pcc)
         res["none"].append(iou(full, truth, W[i], H[i]))
         res["mean"].append(iou(mean_crop.loc[i].to_dict(), truth, W[i], H[i]))
@@ -148,7 +150,6 @@ def main(data_dir, save):
     print(pd.DataFrame({"mean IoU": res.mean(), "median IoU": res.median(),
                         "IoU>0.7 (close)": (res > 0.7).mean(), "IoU>0.8": (res > 0.8).mean()}).round(3).to_string())
     print("\nCrops cutting into the picked couple:", {k: f"{np.mean(v):.1%}" for k, v in cuts.items()})
-    print(f"containment applied (confident couple): {(X.subject_p >= SUBJECT_P).mean():.1%} of photos")
     ang_err = (pred.t_angle - X.t_angle).abs()
     print(f"angle error: model {ang_err.mean():.2f} deg, no rotation {X.t_angle.abs().mean():.2f} deg")
     out = df[["image_id", "folder", "preview_w", "preview_h"] + CROP].copy()

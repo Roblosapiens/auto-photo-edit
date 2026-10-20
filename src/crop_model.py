@@ -197,6 +197,21 @@ def contain_subject(c, box, W, H, margins=CONTAIN_MARGINS):
     return c
 
 
+# Besides the chosen couple, protect every person at least this likely to be one the photographer keeps.
+# docs/experiments/partner-and-protection.md: cuts couple truncation from 12.2% to 7.9% of crops, IoU
+# slightly better, ~1 pt more too-loose crops; 0.7 with no area cap was chosen out-of-fold.
+PROTECT_P = 0.7
+
+
+def protect_subjects(c, couple_box, persons, probs, picked, W, H, tau=PROTECT_P):
+    """No-cut rule over the couple plus every other person with subject probability >= tau."""
+    boxes, _, _ = unpack(persons)
+    extra = [i for i in range(len(boxes)) if i not in picked and probs[i] >= tau]
+    allb = np.vstack([np.asarray(couple_box)[None]] + [boxes[i][None] for i in extra])
+    union = np.array([allb[:, 0].min(), allb[:, 1].min(), allb[:, 2].max(), allb[:, 3].max()])
+    return contain_subject(c, union, W, H)
+
+
 def cuts_subject(c, box, W, H, tol=0.02):
     """True if an unrotated crop cuts more than tol x couple height into the couple box (image edges excused)."""
     bh, t = box[3] - box[1], tol * (box[3] - box[1])

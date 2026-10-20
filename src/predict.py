@@ -30,7 +30,7 @@ import pandas as pd
 
 from crop_features import analyse, load_pose_model
 from crop_model import TARGETS as CROP_TARGETS
-from crop_model import SUBJECT_P, contain_subject, person_features, photo_features, rotate_crop, targets_to_crop
+from crop_model import person_features, photo_features, pick_couple, protect_subjects, rotate_crop, targets_to_crop, unpack
 from features import clip_embed, exif_features, image_stats
 from model import HYBRID_TARGETS, SYNC_SLIDERS, add_derived, design
 from previews import load_preview
@@ -154,20 +154,22 @@ def crop_settings(df, images, emb, cm, straighten=True):
         return {}
     report("Finding dancers", 0, len(todo))
     poses = analyse(load_pose_model(), [images[i] for i in todo], on_progress=stage("Finding dancers"))
-    rows, boxes, idx = [], [], []
+    rows, boxes, idx, people = [], [], [], []
     for i, pose in zip(todo, poses):
         W, H = images[i].size
         if not pose["persons"]:
             continue
         pf = person_features(pose["persons"], W, H, np.asarray(images[i].convert("L")))
         probs = cm["selector"].predict_proba(pf[cm["sel_cols"]].astype(float))[:, 1]
-        box, f = photo_features(pose["persons"], W, H, probs)
+        pick = pick_couple(unpack(pose["persons"])[0], W, H, probs)
+        box, f = photo_features(pose["persons"], W, H, probs, pick=pick)
         if box is None:  # nobody detected: leave this photo uncropped
             continue
         f.update(tilt_deg=pose["tilt_deg"], tilt_n=pose["tilt_n"], focal_length=df.focal_length[i])
         rows.append(f)
         boxes.append(box)
         idx.append(i)
+        people.append((pose["persons"], probs, {p for p in pick if p is not None}))
     if not rows:
         return {}
     X = pd.DataFrame(rows).reindex(columns=cm["feat_cols"])
@@ -183,8 +185,9 @@ def crop_settings(df, images, emb, cm, straighten=True):
     for j, i in enumerate(idx):
         W, H = images[i].size
         c = targets_to_crop(pred.iloc[j], boxes[j], W, H)
-        if rows[j]["subject_p"] >= SUBJECT_P:  # confident it's the couple: never cut into them
-            c = contain_subject(c, boxes[j], W, H)
+        # never cut into the couple, nor anyone else likely to be kept (docs/experiments/partner-and-protection.md)
+        persons, probs, picked = people[j]
+        c = protect_subjects(c, boxes[j], persons, probs, picked, W, H)
         if angles[j]:
             c = rotate_crop(c, angles[j], W, H)
         if not all(np.isfinite(float(v)) for v in c.values()):  # never hand Lightroom a broken crop

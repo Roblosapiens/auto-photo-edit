@@ -72,8 +72,8 @@ negligible. Neither changes the plugin's run time noticeably.
 * The remaining gap to the photographer's own crops (heads cut 6% vs 1%) suggests the group-aware
   candidate-crop approach could still pay off, but C captures much of the gain with no new model.
 
-**Recommendation:** adopt C (protect every person with subject probability >= 0.7, no area cap) in the
-plugin's cropping.
+**Adopted (October 2026):** C (protect every person with subject probability >= 0.7, no area cap) is now the
+plugin's no-cut rule (`crop_model.protect_subjects`). `src/crop_train.py` reproduces it: held-out mean IoU 0.751.
 
 ## Limitations
 
