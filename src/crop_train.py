@@ -8,6 +8,9 @@ Stage 2 - crop model: crop relative to the couple picked with stage-1 probabilit
 Crops are compared by IoU with your real crop against simple baselines, and checked for cutting into
 the couple.
 """
+import offline  # noqa: E402  must run before torch/open_clip/ultralytics are imported
+
+offline.enable()
 import argparse
 import os
 import pickle

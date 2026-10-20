@@ -6,6 +6,9 @@ Reads <data_dir>/edits.parquet, previews.parquet and previews/*.jpg. Writes
   features.parquet  - image statistics + EXIF + as-shot WB, one row per photo
   emb.npy, emb_ids.npy - CLIP image embeddings (512-d) for the same photos
 """
+import offline  # noqa: E402  must run before torch/open_clip/ultralytics are imported
+
+offline.enable()
 import math
 import os
 import sys

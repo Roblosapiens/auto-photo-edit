@@ -6,6 +6,9 @@ Writes <out_dir>/previews/<image_id>.jpg (the untouched converter preview, max 1
 <out_dir>/previews.parquet with the camera's as-shot WB multipliers. Resumable: existing previews
 are skipped (their WB is re-read, which is cheap).
 """
+import offline  # noqa: E402  must run before torch/open_clip/ultralytics are imported
+
+offline.enable()
 import io
 import os
 import sys

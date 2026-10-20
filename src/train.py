@@ -9,6 +9,9 @@ Methods compared, all scored on the same non-key photos:
   sync     - mean settings of K key photos you edited in that event (= Lightroom Sync)
   hybrid   - sync + model's per-photo difference from the key photos
 """
+import offline  # noqa: E402  must run before torch/open_clip/ultralytics are imported
+
+offline.enable()
 import argparse
 import os
 import warnings

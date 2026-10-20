@@ -13,6 +13,9 @@ Synced sliders get the mean of the key photos. Exposure and white balance get th
 mean plus the model's prediction of how this photo differs from the key photos. Photos that are not
 cropped yet (and were shot with the camera upright) get a crop framed around the dancers, unstraightened.
 """
+import offline  # noqa: E402  must run before torch/open_clip/ultralytics are imported
+
+offline.enable()
 import argparse
 import json
 import math
@@ -191,7 +194,19 @@ def crop_settings(df, images, emb, cm, straighten=True):
     return out
 
 
+def make_deterministic():
+    """Same request -> same numbers. GPU kernels (notably in GeoCalib) otherwise vary run to run by up to
+    ~0.2 deg of straightening, which a redo would mistake for changes."""
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")  # required for deterministic cuBLAS
+    import torch
+    torch.manual_seed(0)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True, warn_only=True)
+
+
 def main(req_path, resp_path, models_dir, do_crop, straighten=True):
+    make_deterministic()
     photos = json.load(open(req_path, encoding="utf-8"))["photos"]
     if not any(p.get("key") for p in photos):
         sys.exit("No key photos: give 1-3 edited photos in the selection a green label.")

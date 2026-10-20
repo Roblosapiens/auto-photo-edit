@@ -7,6 +7,9 @@ Writes <data_dir>/pose.parquet: one row per photo with
              all in preview pixels; persons sorted by box area, largest first (max 10)
   tilt_deg, tilt_n - estimated camera roll from near-vertical lines (degrees, clockwise positive)
 """
+import offline  # noqa: E402  must run before torch/open_clip/ultralytics are imported
+
+offline.enable()
 import os
 import sys
 

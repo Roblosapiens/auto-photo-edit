@@ -2,6 +2,9 @@
 
 Usage: python src/train_final.py <data_dir> <model_out.pkl>
 """
+import offline  # noqa: E402  must run before torch/open_clip/ultralytics are imported
+
+offline.enable()
 import pickle
 import sys
 import warnings

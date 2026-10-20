@@ -6,6 +6,9 @@ Reads the catalog read-only. Each row is one photo: file path, event folder, EXI
 develop-slider values (Lightroom only stores non-default values; missing ones are filled with
 Lightroom's defaults).
 """
+import offline  # noqa: E402  must run before torch/open_clip/ultralytics are imported
+
+offline.enable()
 import re
 import sqlite3
 import sys

@@ -2,6 +2,9 @@
 
 Usage: python src/explore.py <edits.parquet>
 """
+import offline  # noqa: E402  must run before torch/open_clip/ultralytics are imported
+
+offline.enable()
 import sys
 
 import pandas as pd

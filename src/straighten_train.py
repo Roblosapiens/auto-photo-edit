@@ -7,6 +7,9 @@ labelled positive when its angle is within 0.25 deg of the photographer's CropAn
 best-scoring line (refined by the parallel lines that agree with it), or no rotation if nothing
 scores above a threshold tuned on held-out events.
 """
+import offline  # noqa: E402  must run before torch/open_clip/ultralytics are imported
+
+offline.enable()
 import argparse
 import os
 import pickle

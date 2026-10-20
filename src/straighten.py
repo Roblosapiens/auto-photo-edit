@@ -6,6 +6,9 @@ rotating until it is vertical. Lightroom's CropAngle has the same sign as the li
 
 Usage: python src/straighten.py <data_dir>   -> <data_dir>/lines.parquet (segments for every preview)
 """
+import offline  # noqa: E402  must run before torch/open_clip/ultralytics are imported
+
+offline.enable()
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
